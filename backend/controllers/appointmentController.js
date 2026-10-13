@@ -21,42 +21,55 @@ const formatTime12H = (time24) => {
   return `${h12}:${m} ${ampm}`;
 };
 
+const parseDateString = (d) => {
+  if (!d) return '';
+  if (typeof d === 'string') return d.split('T')[0];
+  return new Date(d).toISOString().split('T')[0];
+};
+
 exports.getAvailableSlots = async (req, res) => {
-  const { orgId, serviceId, date } = req.query;
+  let { orgId, serviceId, date } = req.query;
   
-  if (!orgId || !serviceId || !date) {
-    return res.status(400).json({ message: 'Organization, service, and date are required.' });
+  if (!serviceId || !date) {
+    return res.status(400).json({ message: 'Service and date are required.' });
   }
 
   try {
-    const selectedDate = new Date(date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const service = await Service.findById(serviceId);
+    if (!service) {
+      return res.status(404).json({ message: 'Service not found.' });
+    }
 
-    if (selectedDate < today) {
-      return res.status(400).json({ message: 'Cannot book appointments in the past.' });
+    if (!orgId) {
+      orgId = service.organization;
     }
 
     const org = await Organization.findById(orgId);
-    const service = await Service.findById(serviceId);
-
-    if (!org || !service) {
-      return res.status(404).json({ message: 'Organization or Service not found.' });
+    if (!org) {
+      return res.status(404).json({ message: 'Organization not found.' });
     }
+
+    const dateStr = parseDateString(date);
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    if (dateStr < todayStr) {
+      return res.status(400).json({ message: 'Cannot book appointments in the past.' });
+    }
+
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const selectedDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    const nextDay = new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0, 0));
 
     const openMins = timeToMinutes(org.businessHours?.open || '09:00');
     const closeMins = timeToMinutes(org.businessHours?.close || '17:00');
     const duration = service.estimatedDuration || 15;
 
-    // Fetch existing appointments
-    const nextDay = new Date(selectedDate);
-    nextDay.setDate(nextDay.getDate() + 1);
-
+    // Fetch existing scheduled appointments
     const bookedAppointments = await Appointment.find({
-      organization: orgId,
-      service: serviceId,
+      organization: org._id,
+      service: service._id,
       date: { $gte: selectedDate, $lt: nextDay },
-      status: { $in: ['scheduled'] }
+      status: 'scheduled'
     });
 
     const bookedTimes = bookedAppointments.map(app => app.time); // e.g. "09:00"
@@ -64,14 +77,14 @@ exports.getAvailableSlots = async (req, res) => {
     // Generate slots
     const slots = [];
     const now = new Date();
-    const isToday = selectedDate.getTime() === today.getTime();
+    const isToday = dateStr === todayStr;
     const currentMins = now.getHours() * 60 + now.getMinutes();
 
     for (let m = openMins; m + duration <= closeMins; m += duration) {
       const time24 = minutesToTime(m);
       
-      // If it's today, filter out past slots + 30 min buffer
-      if (isToday && m < currentMins + 30) {
+      // If it's today, filter out past slots + 15 min buffer
+      if (isToday && m <= currentMins + 15) {
         continue;
       }
 
@@ -85,27 +98,44 @@ exports.getAvailableSlots = async (req, res) => {
 
     res.json(slots);
   } catch (error) {
+    console.error('Error fetching available slots:', error);
     res.status(500).json({ message: 'Failed to fetch available slots. Please try again.' });
   }
 };
 
 exports.bookAppointment = async (req, res) => {
-  const { organization, service, date, time, notes } = req.body;
+  let { organization, service, date, time, notes } = req.body;
   try {
-    if (!organization || !service || !date || !time) {
-      return res.status(400).json({ message: 'Please provide all required fields.' });
+    if (!service || !date || !time) {
+      return res.status(400).json({ message: 'Service, date, and time are required.' });
     }
 
-    const selectedDate = new Date(date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const serviceDoc = await Service.findById(service);
+    if (!serviceDoc) {
+      return res.status(404).json({ message: 'Selected service not found.' });
+    }
+
+    if (!organization) {
+      organization = serviceDoc.organization;
+    }
+
+    const org = await Organization.findById(organization);
+    if (!org) {
+      return res.status(404).json({ message: 'Organization not found.' });
+    }
+
+    const dateStr = parseDateString(date);
+    const todayStr = new Date().toISOString().split('T')[0];
     
-    if (selectedDate < today) {
+    if (dateStr < todayStr) {
       return res.status(400).json({ message: 'Cannot book appointments in the past.' });
     }
 
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const selectedDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    const nextDay = new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0, 0));
+
     // Check organization business hours
-    const org = await Organization.findById(organization);
     const openMins = timeToMinutes(org.businessHours?.open || '09:00');
     const closeMins = timeToMinutes(org.businessHours?.close || '17:00');
     const reqMins = timeToMinutes(time);
@@ -114,13 +144,19 @@ exports.bookAppointment = async (req, res) => {
       return res.status(400).json({ message: 'Requested time is outside business hours.' });
     }
 
-    // Check duplicates for this user
-    const nextDay = new Date(selectedDate);
-    nextDay.setDate(nextDay.getDate() + 1);
+    // If today, prevent booking past time
+    if (dateStr === todayStr) {
+      const now = new Date();
+      const currentMins = now.getHours() * 60 + now.getMinutes();
+      if (reqMins <= currentMins) {
+        return res.status(400).json({ message: 'Cannot book a time slot in the past.' });
+      }
+    }
 
+    // Check duplicates for this customer
     const existingUserAppt = await Appointment.findOne({
       customer: req.user._id,
-      service,
+      service: serviceDoc._id,
       date: { $gte: selectedDate, $lt: nextDay },
       status: 'scheduled'
     });
@@ -131,8 +167,8 @@ exports.bookAppointment = async (req, res) => {
 
     // Check capacity (slot already taken)
     const slotTaken = await Appointment.findOne({
-      organization,
-      service,
+      organization: org._id,
+      service: serviceDoc._id,
       date: { $gte: selectedDate, $lt: nextDay },
       time,
       status: 'scheduled'
@@ -142,13 +178,13 @@ exports.bookAppointment = async (req, res) => {
       return res.status(400).json({ message: 'That time slot is no longer available. Please choose another time.' });
     }
 
-    // Basic logic for token generation
+    // Token generation
     const tokenNumber = `APT-${Math.floor(1000 + Math.random() * 9000)}`;
     
     const appointment = new Appointment({
       customer: req.user._id,
-      organization,
-      service,
+      organization: org._id,
+      service: serviceDoc._id,
       date: selectedDate,
       time,
       notes,
@@ -156,20 +192,29 @@ exports.bookAppointment = async (req, res) => {
     });
     
     const createdAppointment = await appointment.save();
+
+    // Notify real-time listeners
+    try {
+      const io = require('../socket').getIo();
+      io.to(`user_${req.user._id}`).emit('user_updated');
+    } catch (e) {}
+
     res.status(201).json(createdAppointment);
   } catch (error) {
-    res.status(500).json({ message: 'An unexpected error occurred while booking. Please try again later.' });
+    console.error('Appointment booking error:', error);
+    res.status(500).json({ message: error.message || 'An unexpected error occurred while booking. Please try again later.' });
   }
 };
 
 exports.getUserAppointments = async (req, res) => {
   try {
     const appointments = await Appointment.find({ customer: req.user._id })
-      .populate('organization', 'name')
-      .populate('service', 'name')
+      .populate('organization', 'name type address businessHours')
+      .populate('service', 'name estimatedDuration type description')
       .sort({ date: 1, time: 1 });
     res.json(appointments);
   } catch (error) {
+    console.error('Error fetching user appointments:', error);
     res.status(500).json({ message: 'Failed to fetch your appointments.' });
   }
 };
@@ -188,8 +233,15 @@ exports.cancelAppointment = async (req, res) => {
 
     appointment.status = 'cancelled';
     await appointment.save();
+
+    try {
+      const io = require('../socket').getIo();
+      io.to(`user_${req.user._id}`).emit('user_updated');
+    } catch (e) {}
+
     res.json({ message: 'Appointment cancelled successfully.', appointment });
   } catch (error) {
+    console.error('Error cancelling appointment:', error);
     res.status(500).json({ message: 'Failed to cancel appointment. Please try again.' });
   }
 };
@@ -204,25 +256,33 @@ exports.rescheduleAppointment = async (req, res) => {
       return res.status(400).json({ message: `Cannot reschedule an appointment that is ${appointment.status}.` });
     }
 
-    const selectedDate = new Date(date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const dateStr = parseDateString(date);
+    const todayStr = new Date().toISOString().split('T')[0];
 
-    if (selectedDate < today) {
+    if (dateStr < todayStr) {
       return res.status(400).json({ message: 'Cannot reschedule to a date in the past.' });
     }
 
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const selectedDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    const nextDay = new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0, 0));
+
     const org = await Organization.findById(appointment.organization);
-    const openMins = timeToMinutes(org.businessHours?.open || '09:00');
-    const closeMins = timeToMinutes(org.businessHours?.close || '17:00');
+    const openMins = timeToMinutes(org?.businessHours?.open || '09:00');
+    const closeMins = timeToMinutes(org?.businessHours?.close || '17:00');
     const reqMins = timeToMinutes(time);
 
     if (reqMins < openMins || reqMins >= closeMins) {
       return res.status(400).json({ message: 'Requested time is outside business hours.' });
     }
 
-    const nextDay = new Date(selectedDate);
-    nextDay.setDate(nextDay.getDate() + 1);
+    if (dateStr === todayStr) {
+      const now = new Date();
+      const currentMins = now.getHours() * 60 + now.getMinutes();
+      if (reqMins <= currentMins) {
+        return res.status(400).json({ message: 'Cannot reschedule to a past time slot today.' });
+      }
+    }
 
     const slotTaken = await Appointment.findOne({
       _id: { $ne: appointment._id },
@@ -241,8 +301,14 @@ exports.rescheduleAppointment = async (req, res) => {
     appointment.time = time;
     await appointment.save();
 
+    try {
+      const io = require('../socket').getIo();
+      io.to(`user_${req.user._id}`).emit('user_updated');
+    } catch (e) {}
+
     res.json({ message: 'Appointment rescheduled successfully.', appointment });
   } catch (error) {
+    console.error('Error rescheduling appointment:', error);
     res.status(500).json({ message: 'Failed to reschedule appointment. Please try again.' });
   }
 };

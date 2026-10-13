@@ -62,10 +62,21 @@ export function Navbar() {
         <div className="flex items-center space-x-6">
           {user ? (
             <>
-              <span className="text-sm font-medium text-slate-500">Hi, <span className="text-slate-800">{user.name.split(' ')[0]}</span></span>
+              <Link 
+                to="/profile" 
+                className="flex items-center space-x-2 rounded-full py-1.5 px-3 text-sm font-medium text-slate-600 hover:text-primary hover:bg-slate-100 transition-all border border-slate-200/60 bg-white shadow-xs group"
+                title="View Profile"
+              >
+                <span className="h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs group-hover:bg-primary group-hover:text-white transition-colors">
+                  {user.name ? user.name.trim().charAt(0).toUpperCase() : 'U'}
+                </span>
+                <span>
+                  Hi, <span className="font-semibold text-slate-900">{user.name.split(' ')[0]}</span>
+                </span>
+              </Link>
               <button
                 onClick={handleLogout}
-                className="text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors"
+                className="text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors px-2 py-1"
               >
                 Logout
               </button>

@@ -9,7 +9,7 @@ import { useSocket } from "../context/SocketContext"
 
 export default function StaffDashboard() {
   const { user } = useAuth()
-  const { socket, isConnected, joinQueueRoom, leaveQueueRoom } = useSocket()
+  const { socket, isConnected, isReconnecting, connectionRestored, joinQueueRoom, leaveQueueRoom } = useSocket()
   const navigate = useNavigate()
   
   const [organizations, setOrganizations] = useState([])
@@ -154,10 +154,16 @@ export default function StaffDashboard() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      {!isConnected && (
-        <div className="mb-4 bg-amber-50 text-amber-800 p-3 flex items-center justify-center rounded-md text-sm font-medium">
-          <AlertCircle className="h-4 w-4 mr-2 animate-pulse" />
+      {isReconnecting && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-900 p-3 flex items-center justify-center rounded-md text-sm font-medium">
+          <AlertCircle className="h-4 w-4 mr-2 animate-pulse text-amber-600" />
           Connection temporarily unavailable. Reconnecting...
+        </div>
+      )}
+      {connectionRestored && (
+        <div className="mb-4 bg-green-50 border border-green-200 text-green-800 p-3 flex items-center justify-center rounded-md text-sm font-medium animate-fade-in">
+          <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
+          Connection restored. Live updates are active.
         </div>
       )}
 

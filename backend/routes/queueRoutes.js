@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { joinQueue, getQueueStatus, updateQueueStatus, callNext, getActiveQueue } = require('../controllers/queueController');
+const { joinQueue, getQueueStatus, updateQueueStatus, callNext, getActiveQueue, getMyQueues } = require('../controllers/queueController');
 const { requireAuth, requireAdmin, requireStaff, checkStaffOrgAccess } = require('../middleware/auth');
 
 router.route('/')
   .post(requireAuth, joinQueue);
+
+router.route('/my')
+  .get(requireAuth, getMyQueues);
 
 router.route('/active')
   .get(requireAuth, requireStaff, checkStaffOrgAccess, getActiveQueue);

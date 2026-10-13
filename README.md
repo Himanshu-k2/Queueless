@@ -12,19 +12,21 @@ Built as a full-stack JavaScript application with real-time updates, AI-powered 
 
 ### For Customers
 - **Account Registration & Login** — Secure sign-up and authentication
+- **Customer Dashboard** — Personalized overview with live statistics (total bookings, upcoming appointments, active queues, completed, cancelled), live queue progress tracking, and paginated booking history
+- **Customer Profile Management** — Dedicated profile page (`/profile`) with avatar initials, personal info, verified account badge, inline profile editing (name, phone), and secure password updates
 - **Organisation Discovery** — Browse and search approved organisations by name, service, type, or city
 - **Location-Based Search** — Use browser geolocation to find nearby organisations sorted by distance
 - **Interactive Maps** — View organisations on a Leaflet + OpenStreetMap map with clickable markers
-- **Appointment Booking** — Select a service, pick a slot, and receive a token number
-- **Digital Queue** — Join a queue and track your position, people ahead, estimated wait time, and currently serving token
-- **Real-Time Updates** — Queue status updates pushed via WebSockets without page refresh
+- **Dynamic Appointment Booking** — Select a service, choose from dynamic 14-day calendar dates, pick open time slots according to working hours, and receive instant booking receipts with token numbers
+- **Digital Queue Tracking** — Join a queue and track your position, people ahead, estimated wait time, and currently serving token
+- **Real-Time Updates & Reconnection Resilience** — Queue status updates pushed via WebSockets (Socket.IO) with bounded retries and automatic recovery notifications
 - **AI Assistant** — Chat with a Gemini-powered assistant to find services, understand booking options, and check queue status
 - **Offline Awareness** — Online/offline status detection with local storage of pending actions via IndexedDB
 
 ### For Staff
 - **Staff Registration** — Request access to a specific organisation (pending admin approval)
 - **Organisation Selection** — Staff assigned to multiple organisations can choose which one to manage
-- **Queue Management** — Call next, mark serving, complete, skip, or recall customers
+- **Queue Operations Console** — Call next, mark serving, complete, skip, or recall customers in real time
 - **Appointment Management** — View and update appointment statuses
 
 ### For Administrators
@@ -39,7 +41,7 @@ Built as a full-stack JavaScript application with real-time updates, AI-powered 
 
 | Role | Access |
 |------|--------|
-| **Customer** | Browse organisations, book appointments, join queues, track status, chat with AI assistant |
+| **Customer** | Browse organisations, book appointments, join queues, track status, edit profile, chat with AI assistant |
 | **Staff** | Manage queues and appointments for assigned organisations |
 | **Admin** | Verify organisations, approve staff, oversee the entire platform |
 
@@ -138,7 +140,7 @@ graph TD
 | Backend | Node.js, Express 5 |
 | Database | MongoDB, Mongoose |
 | Authentication | JSON Web Tokens (JWT), bcryptjs |
-| Real-Time | Socket.IO |
+| Real-Time | Socket.IO (with WebSocket & polling transports) |
 | AI | Google Gemini (`@google/genai`) |
 | Offline Support | Service Worker, IndexedDB (`idb`) |
 | Dev Tools | Vite, PostCSS, Autoprefixer |
@@ -151,16 +153,16 @@ graph TD
 QueueLess/
 ├── backend/
 │   ├── config/
-│   │   └── db.js                  # MongoDB connection
+│   │   └── db.js                  # MongoDB connection with server timeout
 │   ├── controllers/
 │   │   ├── aiController.js        # Gemini AI chat
-│   │   ├── appointmentController.js
-│   │   ├── orgController.js       # Organisation search & distance
-│   │   ├── queueController.js
-│   │   ├── serviceController.js
-│   │   └── userController.js      # Registration & login
+│   │   ├── appointmentController.js # Slots, booking, cancel & reschedule
+│   │   ├── orgController.js       # Organisation search & distance (Haversine)
+│   │   ├── queueController.js     # Live queue & customer active queues
+│   │   ├── serviceController.js   # Service listing & lookup by ID
+│   │   └── userController.js      # Registration, login, profile & password
 │   ├── middleware/
-│   │   └── auth.js                # JWT verification, role guards
+│   │   └── auth.js                # JWT verification, role guards, org checks
 │   ├── models/
 │   │   ├── Appointment.js
 │   │   ├── Counter.js
@@ -180,11 +182,14 @@ QueueLess/
 │   │   ├── serviceRoutes.js
 │   │   └── userRoutes.js
 │   ├── scripts/
-│   │   └── seed.js                # Demo data seeder
+│   │   ├── seed.js                # Demo data seeder
+│   │   ├── verifyDb.js            # Database record verification
+│   │   ├── fixIndexes.js          # Index maintenance & cleanup
+│   │   └── testCustomerFlow.js    # End-to-end customer workflow test
 │   ├── services/
 │   │   ├── notificationService.js
 │   │   └── queueService.js        # Queue engine (FIFO, priority, waitlist)
-│   ├── socket.js                  # Socket.IO initialisation
+│   ├── socket.js                  # Socket.IO initialisation & CORS setup
 │   └── server.js                  # Application entry point
 │
 ├── frontend/
@@ -195,21 +200,22 @@ QueueLess/
 │   │   │   ├── chat/
 │   │   │   │   └── ChatWidget.jsx # AI assistant floating widget
 │   │   │   ├── layout/
-│   │   │   │   ├── MainLayout.jsx
+│   │   │   │   ├── MainLayout.jsx # Navbar with profile avatar, network bar
 │   │   │   │   └── ProtectedRoute.jsx
-│   │   │   └── ui/                # Reusable UI components
+│   │   │   └── ui/                # Reusable UI components (Button, Card, Input)
 │   │   ├── context/
-│   │   │   ├── AuthContext.jsx    # Authentication state
+│   │   │   ├── AuthContext.jsx    # Auth state with profile update sync
 │   │   │   ├── NetworkContext.jsx # Online/offline & sync
-│   │   │   └── SocketContext.jsx  # WebSocket connection
+│   │   │   └── SocketContext.jsx  # Reconnection resilience & WebSocket state
 │   │   ├── pages/
 │   │   │   ├── AdminDashboard.jsx
-│   │   │   ├── BookAppointment.jsx
-│   │   │   ├── CustomerDashboard.jsx
+│   │   │   ├── BookAppointment.jsx   # 14-day date picker, slots & confirmation
+│   │   │   ├── CustomerDashboard.jsx # Real stats, live queues, history
+│   │   │   ├── CustomerProfile.jsx   # Dedicated profile & password management
 │   │   │   ├── Home.jsx
 │   │   │   ├── Login.jsx
-│   │   │   ├── Organizations.jsx  # Search, map, geolocation
-│   │   │   ├── QueueStatus.jsx
+│   │   │   ├── Organizations.jsx      # Search, Leaflet map, geolocation
+│   │   │   ├── QueueStatus.jsx        # Live ticket tracking
 │   │   │   ├── Register.jsx
 │   │   │   ├── RegisterOrganization.jsx
 │   │   │   ├── RegisterStaff.jsx
@@ -218,7 +224,7 @@ QueueLess/
 │   │   ├── utils/
 │   │   │   └── idb.js             # IndexedDB helpers
 │   │   └── App.jsx
-│   └── vite.config.js
+│   └── vite.config.js             # API & Socket.IO dev proxy
 │
 └── README.md
 ```
@@ -309,24 +315,29 @@ The Vite dev server automatically proxies `/api` and `/socket.io` requests to th
 |--------|----------|------|-------------|
 | `POST` | `/api/users/register` | — | Customer registration |
 | `POST` | `/api/users/register-staff` | — | Staff registration (pending approval) |
-| `POST` | `/api/users/login` | — | Login (returns JWT) |
-| `GET` | `/api/users/profile` | ✅ | Get current user profile |
+| `POST` | `/api/users/login` | — | Unified login (returns JWT and role) |
+| `GET` | `/api/users/profile` | ✅ | Get authenticated user profile & creation date |
+| `PUT` | `/api/users/profile` | ✅ | Update profile details (name, phone) |
+| `PUT` | `/api/users/change-password` | ✅ | Change customer password |
 | `GET` | `/api/organizations` | — | Search organisations (supports `?search=`, `?type=`, `?lat=`, `?lng=`) |
 | `GET` | `/api/organizations/:id` | — | Get organisation details |
 | `GET` | `/api/services/org/:orgId` | — | Get services for an organisation |
-| `POST` | `/api/appointments` | ✅ | Book an appointment |
-| `GET` | `/api/appointments/my` | ✅ | Get customer's appointments |
-| `POST` | `/api/queue/join` | ✅ | Join a queue |
-| `GET` | `/api/queue/my-status` | ✅ | Get customer's queue status |
+| `GET` | `/api/services/:id` | — | Get individual service with populated organisation |
+| `GET` | `/api/appointments/available-slots` | — | Get open time slots for a service & date |
+| `POST` | `/api/appointments` | ✅ | Book an appointment (with duplicate/capacity check) |
+| `GET` | `/api/appointments` | ✅ | Get customer's appointments with populated org & service |
+| `PUT` | `/api/appointments/:id/cancel` | ✅ | Cancel a scheduled appointment |
+| `PUT` | `/api/appointments/:id/reschedule` | ✅ | Reschedule a scheduled appointment |
+| `POST` | `/api/queue` | ✅ | Join a digital queue |
+| `GET` | `/api/queue/my` | ✅ | Get authenticated customer's active queues with live position |
+| `GET` | `/api/queue/:id` | ✅ | Get specific queue entry details & live status |
 | `POST` | `/api/queue/call-next` | 🔒 Staff | Call next in queue |
-| `POST` | `/api/queue/complete` | 🔒 Staff | Complete current customer |
-| `POST` | `/api/queue/skip` | 🔒 Staff | Skip current customer |
-| `POST` | `/api/queue/recall` | 🔒 Staff | Recall skipped customer |
+| `PUT` | `/api/queue/:id` | 🔒 Staff | Update queue status (serving, completed, skipped) |
 | `POST` | `/api/ai/chat` | ✅ | Chat with AI assistant |
-| `GET` | `/api/admin/pending-orgs` | 🔒 Admin | Get pending organisation requests |
-| `POST` | `/api/admin/verify-org` | 🔒 Admin | Approve/reject organisation |
-| `GET` | `/api/admin/pending-staff` | 🔒 Admin | Get pending staff requests |
-| `POST` | `/api/admin/verify-staff` | 🔒 Admin | Approve/reject staff |
+| `GET` | `/api/admin/pending-orgs` | 🔒 Admin | Get pending organisation verification requests |
+| `POST` | `/api/admin/verify-org` | 🔒 Admin | Approve or reject organisation |
+| `GET` | `/api/admin/pending-staff` | 🔒 Admin | Get pending staff access requests |
+| `POST` | `/api/admin/verify-staff` | 🔒 Admin | Approve or reject staff |
 | `GET` | `/api/health` | — | Health check |
 
 ---
@@ -336,8 +347,9 @@ The Vite dev server automatically proxies `/api` and `/socket.io` requests to th
 - Passwords are hashed with **bcryptjs** before storage
 - Authentication uses **JSON Web Tokens** with configurable expiry
 - All admin credentials are sourced from environment variables — never hardcoded
-- Role-based middleware (`requireAuth`, `requireAdmin`, `requireStaff`) protects sensitive endpoints
+- Role-based middleware (`requireAuth`, `requireAdmin`, `requireStaff`, `checkStaffOrgAccess`) protects sensitive endpoints
 - Staff can only manage queues for their assigned organisations
+- Profile updates strictly permit only authorized fields (`name`, `phone`) and verify user identity from token claims, preventing tampering with roles or other accounts
 - The Gemini API key never leaves the server
 - MongoDB connection strings and secrets are excluded from version control via `.gitignore`
 
@@ -345,7 +357,7 @@ The Vite dev server automatically proxies `/api` and `/socket.io` requests to th
 
 ## 📱 Responsive Design
 
-The interface is built with **Tailwind CSS** and designed mobile-first. Key pages — organisation search, queue tracking, appointment booking, and staff management — are fully responsive and usable on phones, tablets, and desktops.
+The interface is built with **Tailwind CSS** and designed mobile-first. Key pages — customer dashboard, profile management, organisation search, interactive maps, queue tracking, appointment booking, and staff consoles — are fully responsive across phones, tablets, and desktops.
 
 ---
 

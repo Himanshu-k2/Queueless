@@ -107,8 +107,17 @@ export const AuthProvider = ({ children }) => {
     fetch('/api/users/logout', { method: 'POST' }).catch(() => {});
   };
 
+  const updateUser = (updatedFields) => {
+    setUser(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, ...updatedFields };
+      localStorage.setItem('queueless_user', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

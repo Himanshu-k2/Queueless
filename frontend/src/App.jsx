@@ -16,6 +16,7 @@ import BookAppointment from "./pages/BookAppointment"
 import QueueStatus from "./pages/QueueStatus"
 import StaffDashboard from "./pages/StaffDashboard"
 import AdminDashboard from "./pages/AdminDashboard"
+import CustomerProfile from "./pages/CustomerProfile"
 
 function App() {
   return (
@@ -35,6 +36,7 @@ function App() {
             <Route path="register-organization" element={<RegisterOrganization />} />
             <Route path="services/:serviceId/book" element={<BookAppointment />} />
             <Route path="queue/:ticketId" element={<QueueStatus />} />
+            <Route path="profile" element={<CustomerProfile />} />
           </Route>
 
           {/* Customer Routes */}

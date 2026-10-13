@@ -1,4 +1,5 @@
 const queueService = require('../services/queueService');
+const QueueEntry = require('../models/QueueEntry');
 
 exports.joinQueue = async (req, res) => {
   const { organization, service } = req.body;
@@ -101,5 +102,57 @@ exports.processCarryForward = async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+exports.getMyQueues = async (req, res) => {
+  try {
+    const activeEntries = await QueueEntry.find({
+      customer: req.user._id,
+      status: { $in: ['waiting', 'called', 'serving'] }
+    })
+    .populate('organization', 'name type address')
+    .populate('service', 'name estimatedDuration type')
+    .sort({ joinedAt: -1 });
+
+    const detailedEntries = await Promise.all(activeEntries.map(async (entry) => {
+      try {
+        const queueStatus = await queueService.getQueueStatus(entry._id);
+        return {
+          _id: entry._id,
+          id: entry._id,
+          tokenNumber: entry.tokenNumber,
+          status: entry.status,
+          organization: entry.organization,
+          service: entry.service,
+          joinedAt: entry.joinedAt,
+          calledAt: entry.calledAt,
+          servedAt: entry.servedAt,
+          peopleAhead: queueStatus.peopleAhead,
+          estimatedWaitTime: queueStatus.estimatedWaitTime,
+          currentServingToken: queueStatus.currentServingToken,
+          isWaitlisted: entry.isWaitlisted
+        };
+      } catch (err) {
+        return {
+          _id: entry._id,
+          id: entry._id,
+          tokenNumber: entry.tokenNumber,
+          status: entry.status,
+          organization: entry.organization,
+          service: entry.service,
+          joinedAt: entry.joinedAt,
+          peopleAhead: 0,
+          estimatedWaitTime: 0,
+          currentServingToken: null,
+          isWaitlisted: entry.isWaitlisted
+        };
+      }
+    }));
+
+    res.json(detailedEntries);
+  } catch (error) {
+    console.error('Error fetching customer active queues:', error);
+    res.status(500).json({ message: 'Failed to fetch active queues.' });
   }
 };
